@@ -10,91 +10,49 @@ import (
 	"os"
 	"strconv"
 	"strings"
-	"text/tabwriter"
+
+	"github.com/soldiermoth/csvx/csvxlib"
+)
+
+var (
+	outputs = OutputMap{
+		"csv":   func(w io.Writer) csvxlib.Writer { return csv.NewWriter(w) },
+		"raw":   func(w io.Writer) csvxlib.Writer { return csvxlib.RawCSVWriter{Writer: w} },
+		"table": func(w io.Writer) csvxlib.Writer { return csvxlib.NewTableWriter(w) },
+	}
 )
 
 func main() {
 	var (
-		indicies filterIndicies
-		output             = flag.String("output", "", "Output [raw,table]")
-		br                 = bufio.NewReader(os.Stdin)
-		csvr               = csv.NewReader(br)
-		out      io.Writer = os.Stdout
-		csvw     csvwriter
+		out        io.Writer = os.Stdout
+		include    FlagIntSlice
+		transforms []csvxlib.Transformer
+		output     = flag.String("output", "csv", "Output ["+strings.Join(outputs.Keys(), ",")+"]")
 	)
-	defer func() { csvw.Flush() }()
-	csvr.FieldsPerRecord = -1
-	flag.Var(&indicies, "i", "indicies to remove")
+	flag.Var(&include, "i", "indicies to include")
 	flag.Parse()
-	switch *output {
-	default:
-		log.Fatalf("Invalid output format=%q", *output)
-	case "":
-		csvw = csv.NewWriter(out)
-	case "raw":
-		csvw = rawCSVWriter{Writer: out}
-	case "tab", "table":
-		csvw = newTableWriter(out)
+	newWriter, ok := outputs[*output]
+	if !ok {
+		log.Fatalf("Invalid output format=%q must be one of [%s]", *output, strings.Join(outputs.Keys(), ","))
 	}
-	for {
-		record, err := csvr.Read()
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
-			log.Fatal(err)
-		}
-		if record, err = indicies.Apply(record); err != nil {
-			log.Fatal(err)
-		}
-		csvw.Write(record)
+	if len(include) > 0 {
+		transforms = append(transforms, csvxlib.IncludeIndicies(include))
+	}
+	var (
+		br  = bufio.NewReader(os.Stdin)
+		w   = newWriter(out)
+		err = csvxlib.Pipe(br, w, transforms...)
+	)
+	defer w.Flush()
+	if err != nil && err != io.EOF {
+		log.Fatal("Problem processing csv", err)
 	}
 }
 
-type tableWriter struct{ *tabwriter.Writer }
+type FlagIntSlice []int
 
-func newTableWriter(w io.Writer) tableWriter {
-	return tableWriter{Writer: tabwriter.NewWriter(w, 5, 4, 2, ' ', tabwriter.TabIndent)}
-}
-func (t tableWriter) Write(line []string) error {
-	fmt.Fprintln(t.Writer, strings.Join(line, "\t"))
-	return nil
-}
-func (t tableWriter) Flush() { t.Writer.Flush() }
-
-type rawCSVWriter struct{ io.Writer }
-
-func (r rawCSVWriter) Write(line []string) error {
-	fmt.Fprintln(r.Writer, strings.Join(line, ","))
-	return nil
-}
-func (r rawCSVWriter) Flush() {}
-
-type csvwriter interface {
-	Write([]string) error
-	Flush()
-}
-
-type filterIndicies []int
-
-func (f *filterIndicies) String() string {
-	return fmt.Sprintf("%#v", *f)
-}
-func (f *filterIndicies) Apply(in []string) ([]string, error) {
-	if f == nil || len(*f) == 0 {
-		return in, nil
-	}
-	out := make([]string, len(*f))
-	for i, j := range *f {
-		if j < len(in) {
-			out[i] = in[j]
-		} else {
-			return nil, fmt.Errorf("index %d not in row=%#v", j, in)
-		}
-	}
-	return out, nil
-}
-func (f *filterIndicies) Set(in string) error {
+func (f *FlagIntSlice) String() string { return fmt.Sprintf("%#v", *f) }
+func (f *FlagIntSlice) Set(in string) error {
 	for _, s := range strings.Split(in, ",") {
 		i, err := strconv.Atoi(s)
 		if err != nil {
@@ -103,4 +61,13 @@ func (f *filterIndicies) Set(in string) error {
 		*f = append(*f, i)
 	}
 	return nil
+}
+
+type OutputMap map[string]func(io.Writer) csvxlib.Writer
+
+func (o OutputMap) Keys() (keys []string) {
+	for key := range outputs {
+		keys = append(keys, key)
+	}
+	return
 }
