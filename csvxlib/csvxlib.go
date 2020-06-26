@@ -13,31 +13,27 @@ type Writer interface {
 	Flush()
 }
 
-type TableWriter struct{ *tabwriter.Writer }
+type TableWriter struct{ tabwriter.Writer }
 
 func NewTableWriter(w io.Writer) *TableWriter {
-	fmt.Fprintln(w, "yeah")
-	return &TableWriter{Writer: tabwriter.NewWriter(w, 5, 4, 2, ' ', tabwriter.TabIndent)}
+	var tw TableWriter
+	tw.Init(w, 5, 4, 2, ' ', tabwriter.TabIndent)
+	return &tw
 }
 
+func (t *TableWriter) Flush() { t.Writer.Flush() }
 func (t *TableWriter) Write(line []string) error {
-	fmt.Fprintln(t.Writer, strings.Join(line, "\t"))
+	fmt.Fprintln(&t.Writer, strings.Join(line, "\t"))
 	return nil
-}
-
-func (t *TableWriter) Flush() {
-	if err := t.Writer.Flush(); err != nil {
-		fmt.Println("Gah")
-	}
 }
 
 type RawCSVWriter struct{ io.Writer }
 
+func (RawCSVWriter) Flush() {}
 func (r RawCSVWriter) Write(line []string) error {
 	fmt.Fprintln(r.Writer, strings.Join(line, ","))
 	return nil
 }
-func (RawCSVWriter) Flush() {}
 
 type Transformer interface {
 	Transform([]string) ([]string, error)
