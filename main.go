@@ -24,24 +24,38 @@ var (
 
 func main() {
 	var (
-		out        io.Writer = os.Stdout
-		include    FlagIntSlice
-		transforms []csvxlib.Transformer
-		output     = flag.String("output", "csv", "Output ["+strings.Join(outputs.Keys(), ",")+"]")
+		out              io.Writer = os.Stdout
+		include, exclude FlagIntSlice
+		delim            FlagRune = ','
+		transforms       []csvxlib.Transformer
+		csvr             = csv.NewReader(bufio.NewReader(os.Stdin))
+		output           = flag.String("output", "csv", "Output ["+strings.Join(outputs.Keys(), ",")+"]")
+		strict           = flag.Bool("strict", true, "Turn on strict mode")
 	)
 	flag.Var(&include, "i", "indicies to include")
+	flag.Var(&exclude, "x", "indicies to exclude")
+	flag.Var(&delim, "d", "delimiter")
 	flag.Parse()
+	// Set up the CSV Reader
+	csvr.FieldsPerRecord = -1
+	csvr.Comma = rune(delim)
+	// Grab the specified output format
 	newWriter, ok := outputs[*output]
 	if !ok {
 		log.Fatalf("Invalid output format=%q must be one of [%s]", *output, strings.Join(outputs.Keys(), ","))
 	}
 	if len(include) > 0 {
-		transforms = append(transforms, csvxlib.IncludeIndicies(include))
+		transforms = append(transforms, csvxlib.IncludeIndicies{
+			List:   include,
+			Strict: *strict,
+		})
+	}
+	if len(exclude) > 0 {
+		transforms = append(transforms, &csvxlib.ExcludeIndicies{List: exclude})
 	}
 	var (
-		br  = bufio.NewReader(os.Stdin)
 		w   = newWriter(out)
-		err = csvxlib.Pipe(br, w, transforms...)
+		err = csvxlib.Pipe(csvr, w, transforms...)
 	)
 	defer w.Flush()
 	if err != nil && err != io.EOF {
@@ -60,6 +74,18 @@ func (f *FlagIntSlice) Set(in string) error {
 		}
 		*f = append(*f, i)
 	}
+	return nil
+}
+
+type FlagRune rune
+
+func (f *FlagRune) String() string { return fmt.Sprintf("%#v", *f) }
+func (f *FlagRune) Set(in string) error {
+	runes := []rune(in)
+	if len(runes) != 1 {
+		return fmt.Errorf("specify a single rune got=%q", in)
+	}
+	*f = FlagRune(runes[0])
 	return nil
 }
 
