@@ -88,6 +88,15 @@ func (i IncludeIndicies) Transform(in []string) ([]string, error) {
 	return out, nil
 }
 
+type Tracker struct{ Headers []string }
+
+func (t *Tracker) Transform(in []string) ([]string, error) {
+	if len(t.Headers) == 0 {
+		t.Headers = in
+	}
+	return in, nil
+}
+
 func Pipe(r RecordReader, out Writer, transforms ...Transformer) error {
 	for {
 		record, err := r.Read()

@@ -31,6 +31,7 @@ func main() {
 		csvr             = csv.NewReader(bufio.NewReader(os.Stdin))
 		output           = flag.String("output", "csv", "Output ["+strings.Join(outputs.Keys(), ",")+"]")
 		strict           = flag.Bool("strict", true, "Turn on strict mode")
+		printHeaders     = flag.Bool("print-headers", false, "Turn on Column Numbers")
 	)
 	flag.Var(&include, "i", "indicies to include")
 	flag.Var(&exclude, "x", "indicies to exclude")
@@ -53,13 +54,25 @@ func main() {
 	if len(exclude) > 0 {
 		transforms = append(transforms, &csvxlib.ExcludeIndicies{List: exclude})
 	}
+	// Tracker
+	var tracker csvxlib.Tracker
+	if *printHeaders {
+		transforms = append(transforms, &tracker)
+	}
 	var (
 		w   = newWriter(out)
 		err = csvxlib.Pipe(csvr, w, transforms...)
 	)
-	defer w.Flush()
+	w.Flush()
 	if err != nil && err != io.EOF {
 		log.Fatal("Problem processing csv", err)
+	}
+	if *printHeaders {
+		headerOut := csvxlib.NewTableWriter(out)
+		for i, h := range tracker.Headers {
+			headerOut.Write([]string{strconv.Itoa(i), h})
+		}
+		headerOut.Flush()
 	}
 }
 
