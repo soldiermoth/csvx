@@ -6,5 +6,5 @@
 
 Assuming a recent installation of Go is installed: https://golang.org/doc/install
 ```bash
-$ go get github.com/soldiermoth/hlsq
+$ go get github.com/soldiermoth/csvx
 ```

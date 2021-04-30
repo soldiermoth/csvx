@@ -6,6 +6,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"log"
 	"os"
 	"strconv"
@@ -28,7 +29,6 @@ func main() {
 		include, exclude FlagIntSlice
 		delim            FlagRune = ','
 		transforms       []csvxlib.Transformer
-		csvr             = csv.NewReader(bufio.NewReader(os.Stdin))
 		output           = flag.String("output", "csv", "Output ["+strings.Join(outputs.Keys(), ",")+"]")
 		strict           = flag.Bool("strict", true, "Turn on strict mode")
 		printHeaders     = flag.Bool("print-headers", false, "Turn on Column Numbers")
@@ -37,7 +37,11 @@ func main() {
 	flag.Var(&exclude, "x", "indicies to exclude")
 	flag.Var(&delim, "d", "delimiter")
 	flag.Parse()
+	//
 	// Set up the CSV Reader
+	r := newInputReader()
+	defer r.Close()
+	csvr := csv.NewReader(bufio.NewReader(r))
 	csvr.FieldsPerRecord = -1
 	csvr.Comma = rune(delim)
 	// Grab the specified output format
@@ -109,4 +113,28 @@ func (o OutputMap) Keys() (keys []string) {
 		keys = append(keys, key)
 	}
 	return
+}
+
+func newInputReader() io.ReadCloser {
+	var (
+		args    = flag.Args()
+		stat, _ = os.Stdin.Stat()
+	)
+	// We got something from stdin
+	if (stat.Mode() & os.ModeCharDevice) == 0 {
+		if len(args) > 0 {
+			log.Fatal("no arguments expected when reading from stdin")
+		}
+		return ioutil.NopCloser(os.Stdin)
+	}
+	// Let's open a file
+	if len(args) == 1 {
+		r, err := os.Open(args[0])
+		if err != nil {
+			log.Fatalf("could not open file %q err=%q", args[0], err)
+		}
+		return r
+	}
+	log.Fatal("expected 1 argument of the csv file to process or to read from stdin")
+	return nil
 }
